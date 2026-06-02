@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PaperHub Admin Panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --blue: #1a56db; --blue-light: #e8f0fe; --blue-dark: #1341a8;
+  --bg: #f4f7ff; --card: #fff; --text: #111827;
+  --text-2: #4b5563; --text-3: #9ca3af; --border: #e5e7eb;
+  --radius: 12px; --shadow: 0 2px 12px rgba(26,86,219,0.10);
+  --danger: #ef4444; --success: #10b981;
+}
+body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+/* LOGIN */
+.login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+.login-card {
+  background: white; border-radius: 20px; padding: 2.5rem;
+  width: 100%; max-width: 380px; box-shadow: 0 8px 40px rgba(26,86,219,0.15);
+  text-align: center;
+}
+.login-logo { font-size: 2.5rem; margin-bottom: 0.5rem; }
+.login-title { font-family: 'Sora', sans-serif; font-size: 1.5rem; font-weight: 700; color: var(--blue); margin-bottom: 0.25rem; }
+.login-sub { color: var(--text-3); font-size: 0.85rem; margin-bottom: 2rem; }
+.form-group { margin-bottom: 1rem; text-align: left; }
+.form-group label { display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 6px; color: var(--text-2); }
+.form-group input, .form-group select, .form-group textarea {
+  width: 100%; border: 1.5px solid var(--border); border-radius: 10px;
+  padding: 11px 14px; font-size: 0.95rem; font-family: 'DM Sans', sans-serif;
+  color: var(--text); background: white; outline: none; transition: border-color 0.2s;
+}
+.form-group input:focus, .form-group select:focus { border-color: var(--blue); }
+.btn-primary {
+  width: 100%; background: var(--blue); color: white;
+  border: none; border-radius: 10px; padding: 13px;
+  font-size: 1rem; font-weight: 600; cursor: pointer;
+  font-family: 'DM Sans', sans-serif; transition: background 0.2s;
+}
+.btn-primary:hover { background: var(--blue-dark); }
+.error-msg { color: var(--danger); font-size: 0.85rem; margin-top: 0.5rem; display: none; }
+
+/* ADMIN */
+.admin-wrap { display: none; }
+.admin-header {
+  background: var(--blue); color: white; padding: 0 1.5rem;
+  height: 60px; display: flex; align-items: center; gap: 1rem;
+  position: sticky; top: 0; z-index: 10;
+  box-shadow: 0 2px 12px rgba(26,86,219,0.3);
+}
+.admin-logo { font-family: 'Sora', sans-serif; font-weight: 700; font-size: 1.1rem; }
+.admin-logo span { color: #fbbf24; }
+.logout-btn {
+  margin-left: auto; background: rgba(255,255,255,0.2);
+  border: none; color: white; padding: 7px 16px;
+  border-radius: 8px; cursor: pointer; font-size: 0.85rem;
+  font-family: 'DM Sans', sans-serif;
+}
+.logout-btn:hover { background: rgba(255,255,255,0.3); }
+
+.admin-body { max-width: 1000px; margin: 0 auto; padding: 2rem 1rem; }
+.admin-grid { display: grid; grid-template-columns: 1fr 1.6fr; gap: 1.5rem; }
+@media (max-width: 700px) { .admin-grid { grid-template-columns: 1fr; } }
+
+.panel-card {
+  background: white; border-radius: var(--radius);
+  box-shadow: var(--shadow); overflow: hidden;
+}
+.panel-header {
+  padding: 1rem 1.25rem; border-bottom: 1px solid var(--border);
+  font-family: 'Sora', sans-serif; font-weight: 600;
+  font-size: 1rem; display: flex; align-items: center; gap: 8px;
+}
+.panel-body { padding: 1.25rem; }
+
+/* FORM */
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.btn-add {
+  width: 100%; background: var(--blue); color: white;
+  border: none; border-radius: 10px; padding: 12px;
+  font-size: 0.95rem; font-weight: 600; cursor: pointer;
+  font-family: 'DM Sans', sans-serif; margin-top: 0.5rem;
+  transition: background 0.2s;
+}
+.btn-add:hover { background: var(--blue-dark); }
+
+/* PAPERS TABLE */
+.papers-list { display: flex; flex-direction: column; gap: 8px; max-height: 600px; overflow-y: auto; }
+.paper-row {
+  background: var(--bg); border-radius: 10px; padding: 12px;
+  border: 1px solid var(--border); display: flex;
+  align-items: flex-start; gap: 10px;
+}
+.paper-row-info { flex: 1; min-width: 0; }
+.paper-row-title { font-weight: 500; font-size: 0.9rem; margin-bottom: 4px; }
+.paper-row-meta { font-size: 0.75rem; color: var(--text-3); }
+.paper-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.btn-edit, .btn-delete {
+  border: none; border-radius: 7px; padding: 6px 12px;
+  font-size: 0.78rem; font-weight: 600; cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+}
+.btn-edit { background: var(--blue-light); color: var(--blue); }
+.btn-edit:hover { background: var(--blue); color: white; }
+.btn-delete { background: #fee2e2; color: var(--danger); }
+.btn-delete:hover { background: var(--danger); color: white; }
+
+.stats-row-admin { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 1.5rem; }
+.stat-mini { background: white; border-radius: 10px; padding: 1rem; text-align: center; box-shadow: var(--shadow); }
+.stat-mini-num { font-family: 'Sora', sans-serif; font-size: 1.5rem; font-weight: 700; color: var(--blue); }
+.stat-mini-label { font-size: 0.75rem; color: var(--text-3); margin-top: 2px; }
+
+.toast {
+  position: fixed; bottom: 20px; right: 20px; z-index: 999;
+  background: var(--success); color: white; padding: 12px 20px;
+  border-radius: 10px; font-size: 0.9rem; font-weight: 500;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  transform: translateY(80px); transition: transform 0.3s;
+}
+.toast.show { transform: translateY(0); }
+
+.search-admin { width: 100%; border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 14px; font-size: 0.9rem; font-family: 'DM Sans', sans-serif; outline: none; margin-bottom: 10px; }
+.search-admin:focus { border-color: var(--blue); }
+
+.badge { display: inline-block; font-size: 0.68rem; font-weight: 600; padding: 2px 7px; border-radius: 100px; }
+.badge-blue { background: var(--blue-light); color: var(--blue); }
+.badge-amber { background: #fef3c7; color: #92400e; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div class="login-wrap" id="loginWrap">
+  <div class="login-card">
+    <div class="login-logo">📄</div>
+    <div class="login-title">Paper<span style="color:#fbbf24">Hub</span></div>
+    <div class="login-sub">Admin Panel — Authorized Access Only</div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="loginPass" placeholder="Enter admin password" onkeydown="if(event.key==='Enter') login()">
+    </div>
+    <button class="btn-primary" onclick="login()">Login to Admin</button>
+    <div class="error-msg" id="loginError">❌ Wrong password. Try again.</div>
+  </div>
+</div>
+
+<!-- ADMIN PANEL -->
+<div class="admin-wrap" id="adminWrap">
+  <header class="admin-header">
+    <div class="admin-logo">📄 Paper<span>Hub</span> Admin</div>
+    <button class="logout-btn" onclick="logout()">Logout</button>
+  </header>
+
+  <div class="admin-body">
+
+    <!-- STATS -->
+    <div class="stats-row-admin" id="adminStats"></div>
+
+    <div class="admin-grid">
+
+      <!-- ADD PAPER FORM -->
+      <div class="panel-card">
+        <div class="panel-header">➕ Add New Paper</div>
+        <div class="panel-body">
+          <div class="form-group">
+            <label>Board *</label>
+            <select id="f_board" onchange="updateFormFields()">
+              <option value="">Select Board</option>
+              <option value="CBSE">CBSE</option>
+              <option value="GSEB">GSEB</option>
+              <option value="GTU">GTU Diploma</option>
+            </select>
+          </div>
+          <div id="f_class_wrap" class="form-group" style="display:none">
+            <label>Class *</label>
+            <select id="f_class" onchange="updateFormFields()">
+              <option value="10th">10th</option>
+              <option value="12th">12th</option>
+            </select>
+          </div>
+          <div id="f_stream_wrap" class="form-group" style="display:none">
+            <label>Stream *</label>
+            <select id="f_stream">
+              <option value="Science">Science</option>
+              <option value="Commerce">Commerce</option>
+              <option value="Arts">Arts</option>
+            </select>
+          </div>
+          <div id="f_branch_wrap" class="form-group" style="display:none">
+            <label>Branch *</label>
+            <select id="f_branch">
+              <option value="Computer Engineering">Computer Engineering</option>
+              <option value="Mechanical Engineering">Mechanical Engineering</option>
+              <option value="Civil Engineering">Civil Engineering</option>
+              <option value="Electrical Engineering">Electrical Engineering</option>
+              <option value="Electronics & Communication">Electronics & Communication</option>
+              <option value="Information Technology">Information Technology</option>
+            </select>
+          </div>
+          <div id="f_sem_wrap" class="form-group" style="display:none">
+            <label>Semester *</label>
+            <select id="f_semester">
+              <option value="Semester 1">Semester 1</option>
+              <option value="Semester 2">Semester 2</option>
+              <option value="Semester 3">Semester 3</option>
+              <option value="Semester 4">Semester 4</option>
+              <option value="Semester 5">Semester 5</option>
+              <option value="Semester 6">Semester 6</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Subject *</label>
+            <input type="text" id="f_subject" placeholder="e.g. Maths, Data Structures">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Year *</label>
+              <input type="text" id="f_year" placeholder="2024">
+            </div>
+            <div class="form-group">
+              <label>Paper Title *</label>
+              <input type="text" id="f_title" placeholder="e.g. Maths Paper 2024">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Google Drive View Link *</label>
+            <input type="text" id="f_view" placeholder="drive.google.com/file/d/ID/view">
+          </div>
+          <div class="form-group">
+            <label>Google Drive Download Link *</label>
+            <input type="text" id="f_download" placeholder="drive.google.com/uc?export=download&id=ID">
+          </div>
+          <button class="btn-add" onclick="addPaper()" id="addBtn">➕ Add Paper</button>
+          <input type="hidden" id="editId" value="">
+        </div>
+      </div>
+
+      <!-- PAPERS LIST -->
+      <div class="panel-card">
+        <div class="panel-header">📄 All Papers (<span id="paperCountLabel">0</span>)</div>
+        <div class="panel-body">
+          <input type="text" class="search-admin" placeholder="Search papers..." oninput="filterAdminPapers(this.value)">
+          <div class="papers-list" id="adminPapersList"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="js/data.js"></script>
+<script>
+const ADMIN_PASS = 'paperhub2024'; // Change this password!
+
+function login() {
+  const pass = document.getElementById('loginPass').value;
+  if (pass === ADMIN_PASS) {
+    document.getElementById('loginWrap').style.display = 'none';
+    document.getElementById('adminWrap').style.display = 'block';
+    renderAdminPapers();
+    updateAdminStats();
+  } else {
+    document.getElementById('loginError').style.display = 'block';
+  }
+}
+
+function logout() {
+  document.getElementById('loginWrap').style.display = 'flex';
+  document.getElementById('adminWrap').style.display = 'none';
+  document.getElementById('loginPass').value = '';
+}
+
+function updateFormFields() {
+  const board = document.getElementById('f_board').value;
+  const cls = document.getElementById('f_class') ? document.getElementById('f_class').value : '';
+  document.getElementById('f_class_wrap').style.display = (board === 'CBSE' || board === 'GSEB') ? 'block' : 'none';
+  document.getElementById('f_stream_wrap').style.display = (board !== 'GTU' && cls === '12th') ? 'block' : 'none';
+  document.getElementById('f_branch_wrap').style.display = (board === 'GTU') ? 'block' : 'none';
+  document.getElementById('f_sem_wrap').style.display = (board === 'GTU') ? 'block' : 'none';
+}
+
+function addPaper() {
+  const board = document.getElementById('f_board').value;
+  const subject = document.getElementById('f_subject').value.trim();
+  const year = document.getElementById('f_year').value.trim();
+  const title = document.getElementById('f_title').value.trim();
+  const view = document.getElementById('f_view').value.trim();
+  const download = document.getElementById('f_download').value.trim();
+
+  if (!board || !subject || !year || !title || !view || !download) {
+    showToast('❌ Please fill all required fields!', true); return;
+  }
+
+  const editId = document.getElementById('editId').value;
+  const paper = {
+    id: editId ? parseInt(editId) : Date.now(),
+    board,
+    class: board === 'GTU' ? 'Diploma' : document.getElementById('f_class').value,
+    stream: (board !== 'GTU' && document.getElementById('f_class').value === '12th') ? document.getElementById('f_stream').value : undefined,
+    branch: board === 'GTU' ? document.getElementById('f_branch').value : undefined,
+    semester: board === 'GTU' ? document.getElementById('f_semester').value : undefined,
+    subject, year, title,
+    view_link: view,
+    download_link: download
+  };
+
+  if (editId) {
+    const idx = PAPERS.findIndex(p => p.id === parseInt(editId));
+    if (idx > -1) PAPERS[idx] = paper;
+    document.getElementById('editId').value = '';
+    document.getElementById('addBtn').textContent = '➕ Add Paper';
+  } else {
+    PAPERS.push(paper);
+  }
+
+  savePapers();
+  clearForm();
+  renderAdminPapers();
+  updateAdminStats();
+  showToast('✅ Paper saved successfully!');
+}
+
+function clearForm() {
+  ['f_board','f_class','f_stream','f_branch','f_semester','f_subject','f_year','f_title','f_view','f_download'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('editId').value = '';
+  document.getElementById('addBtn').textContent = '➕ Add Paper';
+  updateFormFields();
+}
+
+function editPaper(id) {
+  const p = PAPERS.find(x => x.id === id);
+  if (!p) return;
+  document.getElementById('f_board').value = p.board;
+  updateFormFields();
+  if (p.class) document.getElementById('f_class').value = p.class;
+  if (p.stream) document.getElementById('f_stream').value = p.stream;
+  if (p.branch) document.getElementById('f_branch').value = p.branch;
+  if (p.semester) document.getElementById('f_semester').value = p.semester;
+  document.getElementById('f_subject').value = p.subject;
+  document.getElementById('f_year').value = p.year;
+  document.getElementById('f_title').value = p.title;
+  document.getElementById('f_view').value = p.view_link;
+  document.getElementById('f_download').value = p.download_link;
+  document.getElementById('editId').value = id;
+  document.getElementById('addBtn').textContent = '✏️ Update Paper';
+  updateFormFields();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function deletePaper(id) {
+  if (!confirm('Delete this paper?')) return;
+  const idx = PAPERS.findIndex(p => p.id === id);
+  if (idx > -1) PAPERS.splice(idx, 1);
+  savePapers();
+  renderAdminPapers();
+  updateAdminStats();
+  showToast('🗑️ Paper deleted.');
+}
+
+function renderAdminPapers(filter = '') {
+  const list = document.getElementById('adminPapersList');
+  const papers = filter
+    ? PAPERS.filter(p => p.title.toLowerCase().includes(filter.toLowerCase()) || p.subject.toLowerCase().includes(filter.toLowerCase()))
+    : PAPERS;
+  document.getElementById('paperCountLabel').textContent = PAPERS.length;
+  if (!papers.length) {
+    list.innerHTML = '<p style="color:#9ca3af; text-align:center; padding:2rem">No papers yet. Add your first paper!</p>';
+    return;
+  }
+  list.innerHTML = papers.map(p => `
+    <div class="paper-row">
+      <div class="paper-row-info">
+        <div class="paper-row-title">${p.title}</div>
+        <div class="paper-row-meta">
+          <span class="badge badge-blue">${p.board}</span>
+          <span class="badge badge-amber">${p.year}</span>
+          ${p.subject} ${p.branch ? '• ' + p.branch : ''} ${p.semester ? '• ' + p.semester : ''}
+        </div>
+      </div>
+      <div class="paper-row-actions">
+        <button class="btn-edit" onclick="editPaper(${p.id})">✏️ Edit</button>
+        <button class="btn-delete" onclick="deletePaper(${p.id})">🗑️</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function filterAdminPapers(val) { renderAdminPapers(val); }
+
+function updateAdminStats() {
+  const cbse = PAPERS.filter(p => p.board === 'CBSE').length;
+  const gseb = PAPERS.filter(p => p.board === 'GSEB').length;
+  const gtu = PAPERS.filter(p => p.board === 'GTU').length;
+  document.getElementById('adminStats').innerHTML = `
+    <div class="stat-mini"><div class="stat-mini-num">${cbse}</div><div class="stat-mini-label">CBSE Papers</div></div>
+    <div class="stat-mini"><div class="stat-mini-num">${gseb}</div><div class="stat-mini-label">GSEB Papers</div></div>
+    <div class="stat-mini"><div class="stat-mini-num">${gtu}</div><div class="stat-mini-label">GTU Papers</div></div>
+  `;
+}
+
+function showToast(msg, isError = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = isError ? '#ef4444' : '#10b981';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+</script>
+</body>
+</html>
