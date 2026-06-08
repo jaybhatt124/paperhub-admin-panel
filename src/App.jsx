@@ -5,6 +5,7 @@ import {
   deleteDoc,
   doc,
   getDocs,
+  onSnapshot,
   setDoc,
   updateDoc,
 } from 'firebase/firestore';
@@ -17,6 +18,7 @@ const TABS = [
   { id: 'papers', label: 'Papers' },
   { id: 'academic', label: 'Academic Data' },
   { id: 'subjects', label: 'Subjects' },
+  { id: 'suggestions', label: 'Suggestions' },
 ];
 
 const PREDEFINED_ACADEMIC_ITEMS = [
@@ -55,6 +57,7 @@ const PREDEFINED_ACADEMIC_ITEMS = [
     name: 'GTU',
     type: 'university',
     classes: ['Diploma'],
+    degrees: ['Diploma'],
     branches: [
       'Computer Engineering',
       'Information Technology',
@@ -105,6 +108,7 @@ const blankAcademicItem = {
   name: '',
   type: 'board',
   classes: [],
+  degrees: [],
   branches: [],
   semesters: 6,
   streams: {},
@@ -138,6 +142,7 @@ function mergeAcademicItems(remoteItems) {
       ...item,
       id: item.id || existing.id,
       classes: uniq([...(existing.classes || []), ...(item.classes || [])]),
+      degrees: uniq([...(existing.degrees || []), ...(item.degrees || [])]),
       branches: uniq([...(existing.branches || []), ...(item.branches || [])]),
       streams: { ...(existing.streams || {}), ...(item.streams || {}) },
       subjects: { ...(existing.subjects || {}), ...(item.subjects || {}) },
@@ -177,6 +182,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [tab, setTab] = useState('dashboard');
   const [papers, setPapers] = useState([]);
+  const [suggestions, setSuggestions] = useState([]);
   const [remoteAcademicItems, setRemoteAcademicItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState('');
@@ -184,10 +190,36 @@ export default function App() {
   const academicItems = useMemo(() => mergeAcademicItems(remoteAcademicItems), [remoteAcademicItems]);
 
   useEffect(() => {
-    if (loggedIn) {
-      fetchPapers();
-      fetchAcademicItems();
-    }
+    if (!loggedIn) return undefined;
+
+    setLoading(true);
+    const unsubscribePapers = onSnapshot(
+      collection(db, 'papers'),
+      snap => {
+        setPapers(snap.docs.map(item => ({ id: item.id, ...item.data() })));
+        setLoading(false);
+      },
+      () => {
+        setPapers([]);
+        setLoading(false);
+      }
+    );
+    const unsubscribeAcademic = onSnapshot(
+      collection(db, 'universities'),
+      snap => setRemoteAcademicItems(snap.docs.map(item => ({ id: item.id, ...item.data() }))),
+      () => setRemoteAcademicItems([])
+    );
+    const unsubscribeSuggestions = onSnapshot(
+      collection(db, 'suggestions'),
+      snap => setSuggestions(snap.docs.map(item => ({ id: item.id, ...item.data() }))),
+      () => setSuggestions([])
+    );
+
+    return () => {
+      unsubscribePapers();
+      unsubscribeAcademic();
+      unsubscribeSuggestions();
+    };
   }, [loggedIn]);
 
   const showToast = (message) => {
@@ -269,7 +301,7 @@ export default function App() {
 
       <main className="main-content">
         {tab === 'dashboard' && (
-          <Dashboard papers={papers} academicItems={academicItems} loading={loading} />
+          <Dashboard papers={papers} academicItems={academicItems} suggestions={suggestions} loading={loading} />
         )}
         {tab === 'papers' && (
           <PapersTab
@@ -292,6 +324,13 @@ export default function App() {
             academicItems={academicItems}
             showToast={showToast}
             fetchAcademicItems={fetchAcademicItems}
+          />
+        )}
+        {tab === 'suggestions' && (
+          <SuggestionsTab
+            suggestions={suggestions}
+            academicItems={academicItems}
+            showToast={showToast}
           />
         )}
       </main>
@@ -321,7 +360,7 @@ function LoginScreen({ password, setPassword, onLogin, error }) {
   );
 }
 
-function Dashboard({ papers, academicItems, loading }) {
+function Dashboard({ papers, academicItems, suggestions, loading }) {
   const boardCounts = papers.reduce((acc, paper) => {
     acc[paper.board] = (acc[paper.board] || 0) + 1;
     return acc;
@@ -342,7 +381,7 @@ function Dashboard({ papers, academicItems, loading }) {
         <MetricCard label="Total papers" value={papers.length} tone="blue" />
         <MetricCard label="Boards / universities" value={academicItems.length} tone="green" />
         <MetricCard label="Branches" value={branches} tone="orange" />
-        <MetricCard label="Subject groups" value={academicItems.reduce((n, item) => n + Object.keys(item.subjects || {}).length, 0)} tone="violet" />
+        <MetricCard label="Pending suggestions" value={suggestions.filter(item => item.status !== 'published').length} tone="violet" />
       </div>
 
       <section className="panel">
@@ -387,8 +426,8 @@ function PapersTab({ papers, academicItems, showToast, fetchPapers }) {
 
   const selectedItem = findAcademicItem(academicItems, form.board);
   const isUniversity = selectedItem?.type === 'university';
-  const classOptions = selectedItem?.classes?.length
-    ? selectedItem.classes
+  const classOptions = (isUniversity ? selectedItem?.degrees : selectedItem?.classes)?.length
+    ? (isUniversity ? selectedItem.degrees : selectedItem.classes)
     : isUniversity ? ['Diploma', 'Degree'] : ['10th', '12th'];
   const streamOptions = selectedItem?.streams?.[form.classLevel] || [];
   const subjectOptions = getSubjectsForPaper(selectedItem, form);
@@ -496,13 +535,13 @@ function PapersTab({ papers, academicItems, showToast, fetchPapers }) {
               </select>
             </Field>
 
-            <Field label="Standard / class *">
+            <Field label={isUniversity ? 'Degree *' : 'Standard / class *'}>
               <select
                 value={form.classLevel}
                 disabled={!form.board}
                 onChange={event => updateForm({ classLevel: event.target.value, stream: '', subject: '' })}
               >
-                <option value="">Select standard</option>
+                <option value="">{isUniversity ? 'Select degree' : 'Select standard'}</option>
                 {classOptions.map(item => <option key={item} value={item}>{item}</option>)}
               </select>
             </Field>
@@ -656,6 +695,7 @@ function AcademicDataTab({ academicItems, showToast, fetchAcademicItems, seedPre
   const [editId, setEditId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [classInput, setClassInput] = useState('');
+  const [degreeInput, setDegreeInput] = useState('');
   const [branchInput, setBranchInput] = useState('');
   const [streamInput, setStreamInput] = useState('');
 
@@ -665,6 +705,12 @@ function AcademicDataTab({ academicItems, showToast, fetchAcademicItems, seedPre
     if (!classInput.trim()) return;
     updateForm({ classes: uniq([...form.classes, classInput]) });
     setClassInput('');
+  };
+
+  const addDegree = () => {
+    if (!degreeInput.trim()) return;
+    updateForm({ degrees: uniq([...(form.degrees || []), degreeInput]) });
+    setDegreeInput('');
   };
 
   const addBranch = () => {
@@ -690,10 +736,13 @@ function AcademicDataTab({ academicItems, showToast, fetchAcademicItems, seedPre
       return;
     }
 
+    const degreeList = uniq(form.degrees || []);
+    const classList = form.type === 'university' ? degreeList : uniq(form.classes);
     const payload = {
       ...form,
       name: form.name.trim(),
-      classes: uniq(form.classes),
+      classes: classList,
+      degrees: form.type === 'university' ? degreeList : [],
       branches: form.type === 'university' ? uniq(form.branches) : [],
       semesters: form.type === 'university' ? Number(form.semesters) || 6 : 0,
       streams: form.type === 'board' ? form.streams : {},
@@ -722,6 +771,7 @@ function AcademicDataTab({ academicItems, showToast, fetchAcademicItems, seedPre
       ...blankAcademicItem,
       ...item,
       classes: item.classes || [],
+      degrees: item.degrees || (item.type === 'university' ? item.classes || [] : []),
       branches: item.branches || [],
       streams: item.streams || {},
       subjects: item.subjects || {},
@@ -782,15 +832,29 @@ function AcademicDataTab({ academicItems, showToast, fetchAcademicItems, seedPre
             )}
           </div>
 
-          <TagEditor
-            label="Standards / classes"
-            value={classInput}
-            setValue={setClassInput}
-            add={addClass}
-            placeholder="10th, 12th, Diploma"
-            tags={form.classes}
-            remove={tag => updateForm({ classes: form.classes.filter(item => item !== tag) })}
-          />
+          {form.type === 'board' && (
+            <TagEditor
+              label="Standards / classes"
+              value={classInput}
+              setValue={setClassInput}
+              add={addClass}
+              placeholder="10th, 12th"
+              tags={form.classes}
+              remove={tag => updateForm({ classes: form.classes.filter(item => item !== tag) })}
+            />
+          )}
+
+          {form.type === 'university' && (
+            <TagEditor
+              label="Degrees"
+              value={degreeInput}
+              setValue={setDegreeInput}
+              add={addDegree}
+              placeholder="MCA, BCA, B.Tech, M.Tech"
+              tags={form.degrees || []}
+              remove={tag => updateForm({ degrees: (form.degrees || []).filter(item => item !== tag) })}
+            />
+          )}
 
           {form.type === 'board' && (
             <TagEditor
@@ -839,7 +903,8 @@ function AcademicDataTab({ academicItems, showToast, fetchAcademicItems, seedPre
                 <button className="btn-delete" onClick={() => remove(item)}>Delete</button>
               </div>
             </div>
-            <div className="uni-detail"><strong>Standards:</strong> {(item.classes || []).join(', ') || '-'}</div>
+            {item.type === 'board' && <div className="uni-detail"><strong>Standards:</strong> {(item.classes || []).join(', ') || '-'}</div>}
+            {item.type === 'university' && <div className="uni-detail"><strong>Degrees:</strong> {(item.degrees || item.classes || []).join(', ') || '-'}</div>}
             {item.type === 'board' && <div className="uni-detail"><strong>Streams:</strong> {(item.streams?.['12th'] || []).join(', ') || '-'}</div>}
             {item.type === 'university' && <div className="uni-detail"><strong>Branches:</strong> {(item.branches || []).join(', ') || '-'}</div>}
             {item.type === 'university' && <div className="uni-detail"><strong>Semesters:</strong> {item.semesters || 6}</div>}
@@ -871,8 +936,13 @@ function SubjectsTab({ academicItems, showToast, fetchAcademicItems }) {
 
   const updateSubjects = async (subjects) => {
     if (!item) return;
-    await setDoc(doc(db, 'universities', item.id), { ...item, subjects }, { merge: true });
-    fetchAcademicItems();
+    try {
+      await setDoc(doc(db, 'universities', item.id), { ...item, subjects }, { merge: true });
+      fetchAcademicItems();
+    } catch (e) {
+      showToast(`Error: ${e.message}`);
+      throw e;
+    }
   };
 
   const addSubject = async () => {
@@ -886,9 +956,13 @@ function SubjectsTab({ academicItems, showToast, fetchAcademicItems }) {
       showToast('Subject already exists.');
       return;
     }
-    await updateSubjects({ ...(item.subjects || {}), [subjectKey]: [...current, newSubject.trim()] });
-    setNewSubject('');
-    showToast('Subject added.');
+    try {
+      await updateSubjects({ ...(item.subjects || {}), [subjectKey]: [...current, newSubject.trim()] });
+      setNewSubject('');
+      showToast('Subject added.');
+    } catch {
+      // The toast is shown in updateSubjects.
+    }
   };
 
   const ensureGroup = async () => {
@@ -900,8 +974,12 @@ function SubjectsTab({ academicItems, showToast, fetchAcademicItems }) {
       showToast('Subject group already exists.');
       return;
     }
-    await updateSubjects({ ...(item.subjects || {}), [subjectKey]: [] });
-    showToast('Subject group added.');
+    try {
+      await updateSubjects({ ...(item.subjects || {}), [subjectKey]: [] });
+      showToast('Subject group added.');
+    } catch {
+      // The toast is shown in updateSubjects.
+    }
   };
 
   const removeSubject = async (groupKey, subject) => {
@@ -909,16 +987,24 @@ function SubjectsTab({ academicItems, showToast, fetchAcademicItems }) {
       ...(item.subjects || {}),
       [groupKey]: (item.subjects?.[groupKey] || []).filter(entry => entry !== subject),
     };
-    await updateSubjects(next);
-    showToast('Subject removed.');
+    try {
+      await updateSubjects(next);
+      showToast('Subject removed.');
+    } catch {
+      // The toast is shown in updateSubjects.
+    }
   };
 
   const removeGroup = async (groupKey) => {
     if (!confirm(`Delete subject group ${groupKey}?`)) return;
     const next = { ...(item.subjects || {}) };
     delete next[groupKey];
-    await updateSubjects(next);
-    showToast('Subject group deleted.');
+    try {
+      await updateSubjects(next);
+      showToast('Subject group deleted.');
+    } catch {
+      // The toast is shown in updateSubjects.
+    }
   };
 
   return (
@@ -952,8 +1038,8 @@ function SubjectsTab({ academicItems, showToast, fetchAcademicItems }) {
             <>
               <Field label="Standard">
                 <select value={selectedClass} onChange={event => { setSelectedClass(event.target.value); setSelectedStream(''); }}>
-                  <option value="">Select standard</option>
-                  {(item.classes || []).map(value => <option key={value} value={value}>{value}</option>)}
+                  <option value="">{isUniversity ? 'Select degree' : 'Select standard'}</option>
+                  {((isUniversity ? item.degrees || item.classes : item.classes) || []).map(value => <option key={value} value={value}>{value}</option>)}
                 </select>
               </Field>
               {selectedClass === '12th' && (
@@ -1035,6 +1121,255 @@ function SubjectsTab({ academicItems, showToast, fetchAcademicItems }) {
           ))}
         </section>
       )}
+    </div>
+  );
+}
+
+function SuggestionsTab({ suggestions, academicItems, showToast }) {
+  const [selectedSuggestion, setSelectedSuggestion] = useState(null);
+  const [form, setForm] = useState(blankPaper);
+
+  const selectedItem = findAcademicItem(academicItems, form.board);
+  const isUniversity = selectedItem?.type === 'university';
+  const classOptions = (isUniversity ? selectedItem?.degrees : selectedItem?.classes)?.length
+    ? (isUniversity ? selectedItem.degrees : selectedItem.classes)
+    : isUniversity ? ['Diploma', 'Degree'] : ['10th', '12th'];
+  const streamOptions = selectedItem?.streams?.[form.classLevel] || [];
+  const subjectOptions = getSubjectsForPaper(selectedItem, form);
+  const subjectKey = getSubjectKey(selectedItem, form);
+
+  const pending = suggestions
+    .filter(item => item.status !== 'published')
+    .sort((a, b) => Number(b.createdAt?.seconds || 0) - Number(a.createdAt?.seconds || 0));
+  const published = suggestions.filter(item => item.status === 'published');
+
+  const updateForm = changes => setForm(prev => ({ ...prev, ...changes }));
+
+  const startPublish = (suggestion) => {
+    setSelectedSuggestion(suggestion);
+    setForm({
+      ...blankPaper,
+      board: suggestion.universityName || '',
+      classLevel: suggestion.degree || '',
+      branch: suggestion.department || '',
+      semester: suggestion.semester || '',
+      title: suggestion.fileName ? `${suggestion.universityName || 'Suggested'} ${suggestion.fileName}` : `${suggestion.universityName || 'Suggested'} paper`,
+      viewLink: suggestion.paperLink || suggestion.fileUrl || '',
+      downloadLink: suggestion.paperLink || suggestion.fileUrl || '',
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const publish = async () => {
+    if (!selectedSuggestion) return;
+    if (!form.board || !form.classLevel || !form.title || !form.subject || !form.year) {
+      showToast('Fill board, class, subject, year and title before publishing.');
+      return;
+    }
+    if (isUniversity && (!form.branch || !form.semester)) {
+      showToast('Select branch and semester before publishing.');
+      return;
+    }
+
+    try {
+      const payload = {
+        ...form,
+        branch: isUniversity ? form.branch : '',
+        semester: isUniversity ? String(form.semester) : '',
+        stream: !isUniversity ? form.stream : '',
+        year: String(form.year),
+        sourceSuggestionId: selectedSuggestion.id,
+        createdAt: new Date(),
+      };
+      await addDoc(collection(db, 'papers'), payload);
+      await updateDoc(doc(db, 'suggestions', selectedSuggestion.id), {
+        status: 'published',
+        publishedAt: new Date(),
+      });
+      showToast('Suggestion published to papers.');
+      setSelectedSuggestion(null);
+      setForm(blankPaper);
+    } catch (e) {
+      showToast(`Error: ${e.message}`);
+    }
+  };
+
+  const markReviewed = async (suggestion) => {
+    try {
+      await updateDoc(doc(db, 'suggestions', suggestion.id), { status: 'reviewed', reviewedAt: new Date() });
+      showToast('Suggestion marked reviewed.');
+    } catch (e) {
+      showToast(`Error: ${e.message}`);
+    }
+  };
+
+  return (
+    <div className="tab-content wide">
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow">Student uploads</p>
+          <h2 className="tab-title">Suggestions ({pending.length})</h2>
+        </div>
+      </div>
+
+      {selectedSuggestion && (
+        <section className="form-card">
+          <div className="panel-header">
+            <div>
+              <h3 className="form-title">Publish suggested paper</h3>
+              <p className="muted">
+                Uploaded by {selectedSuggestion.student?.name || 'student'} for {selectedSuggestion.universityName || '-'}
+                {selectedSuggestion.degree ? ` • ${selectedSuggestion.degree}` : ''}
+                {selectedSuggestion.department ? ` • ${selectedSuggestion.department}` : ''}
+                {selectedSuggestion.semester ? ` • Sem ${selectedSuggestion.semester}` : ''}
+              </p>
+            </div>
+            <a className="link-btn" href={selectedSuggestion.paperLink || selectedSuggestion.fileUrl} target="_blank" rel="noreferrer">View link</a>
+          </div>
+
+          <div className="form-grid">
+            <Field label="Board / university *">
+              <select
+                value={form.board}
+                onChange={event => updateForm({ board: event.target.value, classLevel: '', branch: '', stream: '', semester: '', subject: '' })}
+              >
+                <option value="">Select board or university</option>
+                {academicItems.map(item => <option key={item.id} value={item.name}>{item.name}</option>)}
+              </select>
+            </Field>
+
+            <Field label={isUniversity ? 'Degree *' : 'Standard / class *'}>
+              <select
+                value={form.classLevel}
+                disabled={!form.board}
+                onChange={event => updateForm({ classLevel: event.target.value, stream: '', subject: '' })}
+              >
+                <option value="">{isUniversity ? 'Select degree' : 'Select standard'}</option>
+                {classOptions.map(item => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </Field>
+
+            {isUniversity && (
+              <>
+                <Field label="Branch *">
+                  <select value={form.branch} onChange={event => updateForm({ branch: event.target.value, subject: '' })}>
+                    <option value="">Select branch</option>
+                    {(selectedItem.branches || []).map(branch => <option key={branch} value={branch}>{branch}</option>)}
+                  </select>
+                </Field>
+
+                <Field label="Semester *">
+                  <select value={form.semester} onChange={event => updateForm({ semester: event.target.value, subject: '' })}>
+                    <option value="">Select semester</option>
+                    {Array.from({ length: Number(selectedItem.semesters) || 6 }, (_, index) => String(index + 1))
+                      .map(semester => <option key={semester} value={semester}>Semester {semester}</option>)}
+                  </select>
+                </Field>
+              </>
+            )}
+
+            {!isUniversity && form.classLevel === '12th' && (
+              <Field label="Stream">
+                <select value={form.stream} onChange={event => updateForm({ stream: event.target.value, subject: '' })}>
+                  <option value="">Select stream</option>
+                  {(streamOptions.length ? streamOptions : ['Science', 'Commerce', 'Arts'])
+                    .map(stream => <option key={stream} value={stream}>{stream}</option>)}
+                </select>
+              </Field>
+            )}
+
+            <Field label="Subject *" hint={subjectKey ? `Group: ${subjectKey}` : 'Select details above first'}>
+              <select
+                value={subjectOptions.includes(form.subject) ? form.subject : ''}
+                disabled={!subjectKey || subjectOptions.length === 0}
+                onChange={event => updateForm({ subject: event.target.value })}
+              >
+                <option value="">{subjectOptions.length ? 'Select subject' : 'No subjects added yet'}</option>
+                {subjectOptions.map(subject => <option key={subject} value={subject}>{subject}</option>)}
+              </select>
+              <input value={form.subject} onChange={event => updateForm({ subject: event.target.value })} placeholder="Or type a subject manually" />
+            </Field>
+
+            <Field label="Year *">
+              <input value={form.year} onChange={event => updateForm({ year: event.target.value })} placeholder="2026" />
+            </Field>
+
+            <Field label="Paper title *" full>
+              <input value={form.title} onChange={event => updateForm({ title: event.target.value })} placeholder="Paper title" />
+            </Field>
+          </div>
+
+          <div className="form-actions">
+            <button className="btn-secondary" onClick={() => { setSelectedSuggestion(null); setForm(blankPaper); }}>Cancel</button>
+            <button className="btn-primary" onClick={publish}>Publish paper</button>
+          </div>
+        </section>
+      )}
+
+      <section className="panel table-panel">
+        <SuggestionsTable suggestions={pending} onPublish={startPublish} onReviewed={markReviewed} />
+        {pending.length === 0 && <div className="empty-table">No pending suggestions.</div>}
+      </section>
+
+      {published.length > 0 && (
+        <section className="panel table-panel">
+          <div className="panel-header padded-header">
+            <h3 className="section-title">Published suggestions</h3>
+          </div>
+          <SuggestionsTable suggestions={published.slice(0, 8)} onPublish={null} onReviewed={null} />
+        </section>
+      )}
+    </div>
+  );
+}
+
+function SuggestionsTable({ suggestions, onPublish, onReviewed }) {
+  return (
+    <div className="table-wrap">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Student</th>
+            <th>Contact</th>
+            <th>University</th>
+            <th>Details</th>
+            <th>Link</th>
+            <th>Status</th>
+            {(onPublish || onReviewed) && <th>Actions</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {suggestions.map(suggestion => (
+            <tr key={suggestion.id}>
+              <td className="td-title">{suggestion.student?.name || '-'}</td>
+              <td>
+                <div>{suggestion.student?.mobileNumber || '-'}</div>
+                <div className="muted">{suggestion.student?.email || '-'}</div>
+              </td>
+              <td>{suggestion.universityName || '-'}</td>
+              <td>
+                <div>{suggestion.degree || '-'}</div>
+                <div className="muted">{suggestion.department || '-'}</div>
+                <div className="muted">{suggestion.semester ? `Semester ${suggestion.semester}` : '-'}</div>
+              </td>
+              <td>
+                {suggestion.paperLink || suggestion.fileUrl
+                  ? <a className="table-link" href={suggestion.paperLink || suggestion.fileUrl} target="_blank" rel="noreferrer">{suggestion.fileName || 'Open link'}</a>
+                  : '-'}
+              </td>
+              <td><span className="badge badge-muted">{suggestion.status || 'pending'}</span></td>
+              {(onPublish || onReviewed) && (
+                <td>
+                  <div className="action-btns">
+                    {onPublish && <button className="btn-edit" onClick={() => onPublish(suggestion)}>Publish</button>}
+                    {onReviewed && <button className="btn-secondary" onClick={() => onReviewed(suggestion)}>Reviewed</button>}
+                  </div>
+                </td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

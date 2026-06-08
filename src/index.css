@@ -267,6 +267,10 @@ textarea:focus {
   margin-bottom: 16px;
 }
 
+.padded-header {
+  padding: 18px 22px 0;
+}
+
 .mini-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -327,7 +331,8 @@ textarea:focus {
 .btn-secondary,
 .btn-edit,
 .btn-delete,
-.btn-add-tag {
+.btn-add-tag,
+.link-btn {
   min-height: 38px;
   border-radius: var(--radius);
   padding: 0 15px;
@@ -357,6 +362,27 @@ textarea:focus {
 .btn-secondary:hover {
   border-color: var(--primary);
   color: var(--primary);
+}
+
+.link-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.table-link {
+  color: var(--primary);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.table-link:hover,
+.link-btn:hover {
+  text-decoration: underline;
 }
 
 .btn-edit {
