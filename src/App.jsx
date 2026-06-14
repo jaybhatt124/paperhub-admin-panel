@@ -17,6 +17,7 @@ const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'papers', label: 'Papers' },
   { id: 'academic', label: 'Academic Data' },
+  { id: 'branches', label: 'Branches' },
   { id: 'subjects', label: 'Subjects' },
   { id: 'suggestions', label: 'Suggestions' },
 ];
@@ -58,6 +59,7 @@ const PREDEFINED_ACADEMIC_ITEMS = [
     type: 'university',
     classes: ['Diploma'],
     degrees: ['Diploma'],
+    noBranchDegrees: [],
     branches: [
       'Computer Engineering',
       'Information Technology',
@@ -109,6 +111,7 @@ const blankAcademicItem = {
   type: 'board',
   classes: [],
   degrees: [],
+  noBranchDegrees: [],
   branches: [],
   semesters: 6,
   streams: {},
@@ -143,6 +146,7 @@ function mergeAcademicItems(remoteItems) {
       id: item.id || existing.id,
       classes: uniq([...(existing.classes || []), ...(item.classes || [])]),
       degrees: uniq([...(existing.degrees || []), ...(item.degrees || [])]),
+      noBranchDegrees: uniq([...(existing.noBranchDegrees || []), ...(item.noBranchDegrees || [])]),
       branches: uniq([...(existing.branches || []), ...(item.branches || [])]),
       streams: { ...(existing.streams || {}), ...(item.streams || {}) },
       subjects: { ...(existing.subjects || {}), ...(item.subjects || {}) },
@@ -160,7 +164,11 @@ function findAcademicItem(items, name) {
 function getSubjectKey(item, paper) {
   if (!item) return '';
   if (item.type === 'university') {
-    return paper.branch && paper.semester ? `${paper.branch}_${paper.semester}` : '';
+    if (!paper.semester) return '';
+    if ((item.noBranchDegrees || []).includes(paper.classLevel)) {
+      return paper.classLevel ? `${paper.classLevel}_${paper.semester}` : '';
+    }
+    return paper.branch ? `${paper.branch}_${paper.semester}` : '';
   }
   if (paper.classLevel === '12th' && paper.stream) return `${paper.classLevel}_${paper.stream}`;
   return paper.classLevel || '';
@@ -326,6 +334,13 @@ export default function App() {
             fetchAcademicItems={fetchAcademicItems}
           />
         )}
+        {tab === 'branches' && (
+          <BranchesTab
+            academicItems={academicItems}
+            showToast={showToast}
+            fetchAcademicItems={fetchAcademicItems}
+          />
+        )}
         {tab === 'suggestions' && (
           <SuggestionsTab
             suggestions={suggestions}
@@ -426,6 +441,7 @@ function PapersTab({ papers, academicItems, showToast, fetchPapers }) {
 
   const selectedItem = findAcademicItem(academicItems, form.board);
   const isUniversity = selectedItem?.type === 'university';
+  const needsBranch = isUniversity && !(selectedItem?.noBranchDegrees || []).includes(form.classLevel);
   const classOptions = (isUniversity ? selectedItem?.degrees : selectedItem?.classes)?.length
     ? (isUniversity ? selectedItem.degrees : selectedItem.classes)
     : isUniversity ? ['Diploma', 'Degree'] : ['10th', '12th'];
@@ -449,15 +465,15 @@ function PapersTab({ papers, academicItems, showToast, fetchPapers }) {
       showToast('Fill board, class, subject, year and title.');
       return;
     }
-    if (isUniversity && (!form.branch || !form.semester)) {
-      showToast('Select branch and semester for university papers.');
+    if (isUniversity && (!form.semester || (needsBranch && !form.branch))) {
+      showToast(needsBranch ? 'Select branch and semester for university papers.' : 'Select semester for this degree.');
       return;
     }
 
     try {
       const payload = {
         ...form,
-        branch: isUniversity ? form.branch : '',
+        branch: isUniversity && needsBranch ? form.branch : '',
         semester: isUniversity ? String(form.semester) : '',
         stream: !isUniversity ? form.stream : '',
         year: String(form.year),
@@ -539,36 +555,36 @@ function PapersTab({ papers, academicItems, showToast, fetchPapers }) {
               <select
                 value={form.classLevel}
                 disabled={!form.board}
-                onChange={event => updateForm({ classLevel: event.target.value, stream: '', subject: '' })}
+                onChange={event => updateForm({ classLevel: event.target.value, branch: '', stream: '', semester: '', subject: '' })}
               >
                 <option value="">{isUniversity ? 'Select degree' : 'Select standard'}</option>
                 {classOptions.map(item => <option key={item} value={item}>{item}</option>)}
               </select>
             </Field>
 
-            {isUniversity && (
-              <>
-                <Field label="Branch *">
-                  <select
-                    value={form.branch}
-                    onChange={event => updateForm({ branch: event.target.value, subject: '' })}
-                  >
-                    <option value="">Select branch</option>
-                    {(selectedItem.branches || []).map(branch => <option key={branch} value={branch}>{branch}</option>)}
-                  </select>
-                </Field>
+            {isUniversity && needsBranch && (
+              <Field label="Branch *">
+                <select
+                  value={form.branch}
+                  onChange={event => updateForm({ branch: event.target.value, subject: '' })}
+                >
+                  <option value="">Select branch</option>
+                  {(selectedItem.branches || []).map(branch => <option key={branch} value={branch}>{branch}</option>)}
+                </select>
+              </Field>
+            )}
 
-                <Field label="Semester *">
-                  <select
-                    value={form.semester}
-                    onChange={event => updateForm({ semester: event.target.value, subject: '' })}
-                  >
-                    <option value="">Select semester</option>
-                    {Array.from({ length: Number(selectedItem.semesters) || 6 }, (_, index) => String(index + 1))
-                      .map(semester => <option key={semester} value={semester}>Semester {semester}</option>)}
-                  </select>
-                </Field>
-              </>
+            {isUniversity && (
+              <Field label="Semester *">
+                <select
+                  value={form.semester}
+                  onChange={event => updateForm({ semester: event.target.value, subject: '' })}
+                >
+                  <option value="">Select semester</option>
+                  {Array.from({ length: Number(selectedItem.semesters) || 6 }, (_, index) => String(index + 1))
+                    .map(semester => <option key={semester} value={semester}>Semester {semester}</option>)}
+                </select>
+              </Field>
             )}
 
             {!isUniversity && form.classLevel === '12th' && (
@@ -713,6 +729,15 @@ function AcademicDataTab({ academicItems, showToast, fetchAcademicItems, seedPre
     setDegreeInput('');
   };
 
+  const toggleNoBranchDegree = (degree) => {
+    const current = form.noBranchDegrees || [];
+    updateForm({
+      noBranchDegrees: current.includes(degree)
+        ? current.filter(item => item !== degree)
+        : uniq([...current, degree]),
+    });
+  };
+
   const addBranch = () => {
     if (!branchInput.trim()) return;
     updateForm({ branches: uniq([...form.branches, branchInput]) });
@@ -737,12 +762,14 @@ function AcademicDataTab({ academicItems, showToast, fetchAcademicItems, seedPre
     }
 
     const degreeList = uniq(form.degrees || []);
+    const noBranchDegreeList = uniq(form.noBranchDegrees || []).filter(degree => degreeList.includes(degree));
     const classList = form.type === 'university' ? degreeList : uniq(form.classes);
     const payload = {
       ...form,
       name: form.name.trim(),
       classes: classList,
       degrees: form.type === 'university' ? degreeList : [],
+      noBranchDegrees: form.type === 'university' ? noBranchDegreeList : [],
       branches: form.type === 'university' ? uniq(form.branches) : [],
       semesters: form.type === 'university' ? Number(form.semesters) || 6 : 0,
       streams: form.type === 'board' ? form.streams : {},
@@ -772,6 +799,7 @@ function AcademicDataTab({ academicItems, showToast, fetchAcademicItems, seedPre
       ...item,
       classes: item.classes || [],
       degrees: item.degrees || (item.type === 'university' ? item.classes || [] : []),
+      noBranchDegrees: item.noBranchDegrees || [],
       branches: item.branches || [],
       streams: item.streams || {},
       subjects: item.subjects || {},
@@ -845,15 +873,38 @@ function AcademicDataTab({ academicItems, showToast, fetchAcademicItems, seedPre
           )}
 
           {form.type === 'university' && (
-            <TagEditor
-              label="Degrees"
-              value={degreeInput}
-              setValue={setDegreeInput}
-              add={addDegree}
-              placeholder="MCA, BCA, B.Tech, M.Tech"
-              tags={form.degrees || []}
-              remove={tag => updateForm({ degrees: (form.degrees || []).filter(item => item !== tag) })}
-            />
+            <>
+              <TagEditor
+                label="Degrees"
+                value={degreeInput}
+                setValue={setDegreeInput}
+                add={addDegree}
+                placeholder="MCA, BCA, B.Tech, M.Tech"
+                tags={form.degrees || []}
+                remove={tag => updateForm({
+                  degrees: (form.degrees || []).filter(item => item !== tag),
+                  noBranchDegrees: (form.noBranchDegrees || []).filter(item => item !== tag),
+                })}
+              />
+              {(form.degrees || []).length > 0 && (
+                <div className="tag-section">
+                  <label>Degrees without branch</label>
+                  <div className="tags">
+                    {(form.degrees || []).map(degree => (
+                      <label key={degree} className="tag tag-subject">
+                        <input
+                          type="checkbox"
+                          checked={(form.noBranchDegrees || []).includes(degree)}
+                          onChange={() => toggleNoBranchDegree(degree)}
+                        />
+                        {degree}
+                      </label>
+                    ))}
+                  </div>
+                  <span className="field-hint">Example: mark BBA if students should go directly from BBA to semester without selecting a branch.</span>
+                </div>
+              )}
+            </>
           )}
 
           {form.type === 'board' && (
@@ -905,6 +956,7 @@ function AcademicDataTab({ academicItems, showToast, fetchAcademicItems, seedPre
             </div>
             {item.type === 'board' && <div className="uni-detail"><strong>Standards:</strong> {(item.classes || []).join(', ') || '-'}</div>}
             {item.type === 'university' && <div className="uni-detail"><strong>Degrees:</strong> {(item.degrees || item.classes || []).join(', ') || '-'}</div>}
+            {item.type === 'university' && <div className="uni-detail"><strong>No-branch degrees:</strong> {(item.noBranchDegrees || []).join(', ') || '-'}</div>}
             {item.type === 'board' && <div className="uni-detail"><strong>Streams:</strong> {(item.streams?.['12th'] || []).join(', ') || '-'}</div>}
             {item.type === 'university' && <div className="uni-detail"><strong>Branches:</strong> {(item.branches || []).join(', ') || '-'}</div>}
             {item.type === 'university' && <div className="uni-detail"><strong>Semesters:</strong> {item.semesters || 6}</div>}
@@ -925,10 +977,13 @@ function SubjectsTab({ academicItems, showToast, fetchAcademicItems }) {
 
   const item = academicItems.find(entry => entry.id === selectedId);
   const isUniversity = item?.type === 'university';
+  const noBranchSelected = isUniversity && (item?.noBranchDegrees || []).includes(selectedClass);
 
   const subjectKey = item
     ? isUniversity
-      ? selectedBranch && selectedSemester ? `${selectedBranch}_${selectedSemester}` : ''
+      ? selectedSemester && (noBranchSelected ? selectedClass : selectedBranch)
+        ? `${noBranchSelected ? selectedClass : selectedBranch}_${selectedSemester}`
+        : ''
       : selectedClass === '12th' && selectedStream ? `${selectedClass}_${selectedStream}` : selectedClass
     : '';
 
@@ -1055,12 +1110,27 @@ function SubjectsTab({ academicItems, showToast, fetchAcademicItems }) {
 
           {item && isUniversity && (
             <>
-              <Field label="Branch">
-                <select value={selectedBranch} onChange={event => setSelectedBranch(event.target.value)}>
-                  <option value="">Select branch</option>
-                  {(item.branches || []).map(value => <option key={value} value={value}>{value}</option>)}
+              <Field label="Degree">
+                <select
+                  value={selectedClass}
+                  onChange={event => {
+                    setSelectedClass(event.target.value);
+                    setSelectedBranch('');
+                    setSelectedSemester('');
+                  }}
+                >
+                  <option value="">Select degree</option>
+                  {((item.degrees || item.classes) || []).map(value => <option key={value} value={value}>{value}</option>)}
                 </select>
               </Field>
+              {selectedClass && !noBranchSelected && (
+                <Field label="Branch">
+                  <select value={selectedBranch} onChange={event => setSelectedBranch(event.target.value)}>
+                    <option value="">Select branch</option>
+                    {(item.branches || []).map(value => <option key={value} value={value}>{value}</option>)}
+                  </select>
+                </Field>
+              )}
               <Field label="Semester">
                 <select value={selectedSemester} onChange={event => setSelectedSemester(event.target.value)}>
                   <option value="">Select semester</option>
@@ -1125,6 +1195,81 @@ function SubjectsTab({ academicItems, showToast, fetchAcademicItems }) {
   );
 }
 
+function BranchesTab({ academicItems, showToast, fetchAcademicItems }) {
+  const universities = academicItems.filter(item => item.type === 'university');
+  const [selectedId, setSelectedId] = useState('');
+  const [branchInput, setBranchInput] = useState('');
+
+  const item = universities.find(entry => entry.id === selectedId);
+
+  const updateBranches = async (branches) => {
+    if (!item) return;
+    try {
+      await setDoc(doc(db, 'universities', item.id), { ...item, branches: uniq(branches) }, { merge: true });
+      await fetchAcademicItems();
+      showToast('Branches updated.');
+    } catch (e) {
+      showToast(`Error: ${e.message}`);
+    }
+  };
+
+  const addBranch = () => {
+    if (!item || !branchInput.trim()) return;
+    const next = uniq([...(item.branches || []), branchInput]);
+    setBranchInput('');
+    updateBranches(next);
+  };
+
+  const removeBranch = (branch) => {
+    if (!item) return;
+    updateBranches((item.branches || []).filter(entry => entry !== branch));
+  };
+
+  return (
+    <div className="tab-content">
+      <div className="page-heading">
+        <div>
+          <p className="eyebrow">University branch data</p>
+          <h2 className="tab-title">Branches</h2>
+        </div>
+      </div>
+
+      <section className="form-card">
+        <div className="form-grid">
+          <Field label="University">
+            <select value={selectedId} onChange={event => setSelectedId(event.target.value)}>
+              <option value="">Select university</option>
+              {universities.map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
+            </select>
+          </Field>
+        </div>
+
+        {item && (
+          <TagEditor
+            label={`Branches for ${item.name}`}
+            value={branchInput}
+            setValue={setBranchInput}
+            add={addBranch}
+            placeholder="Computer Engineering, Finance, Marketing"
+            tags={item.branches || []}
+            remove={removeBranch}
+          />
+        )}
+
+        {item && (
+          <div className="subject-builder">
+            <div>
+              <span className="muted">No-branch degrees</span>
+              <div className="subject-key">{(item.noBranchDegrees || []).join(', ') || 'None'}</div>
+            </div>
+            <span className="muted">Manage this from Academic Data.</span>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function SuggestionsTab({ suggestions, academicItems, showToast }) {
   const [selectedSuggestion, setSelectedSuggestion] = useState(null);
   const [form, setForm] = useState(blankPaper);
@@ -1137,6 +1282,7 @@ function SuggestionsTab({ suggestions, academicItems, showToast }) {
   const streamOptions = selectedItem?.streams?.[form.classLevel] || [];
   const subjectOptions = getSubjectsForPaper(selectedItem, form);
   const subjectKey = getSubjectKey(selectedItem, form);
+  const needsBranch = isUniversity && !(selectedItem?.noBranchDegrees || []).includes(form.classLevel);
 
   const pending = suggestions
     .filter(item => item.status !== 'published')
@@ -1166,15 +1312,15 @@ function SuggestionsTab({ suggestions, academicItems, showToast }) {
       showToast('Fill board, class, subject, year and title before publishing.');
       return;
     }
-    if (isUniversity && (!form.branch || !form.semester)) {
-      showToast('Select branch and semester before publishing.');
+    if (isUniversity && (!form.semester || (needsBranch && !form.branch))) {
+      showToast(needsBranch ? 'Select branch and semester before publishing.' : 'Select semester before publishing.');
       return;
     }
 
     try {
       const payload = {
         ...form,
-        branch: isUniversity ? form.branch : '',
+        branch: isUniversity && needsBranch ? form.branch : '',
         semester: isUniversity ? String(form.semester) : '',
         stream: !isUniversity ? form.stream : '',
         year: String(form.year),
@@ -1242,7 +1388,7 @@ function SuggestionsTab({ suggestions, academicItems, showToast }) {
               <select
                 value={form.classLevel}
                 disabled={!form.board}
-                onChange={event => updateForm({ classLevel: event.target.value, stream: '', subject: '' })}
+                onChange={event => updateForm({ classLevel: event.target.value, branch: '', stream: '', semester: '', subject: '' })}
               >
                 <option value="">{isUniversity ? 'Select degree' : 'Select standard'}</option>
                 {classOptions.map(item => <option key={item} value={item}>{item}</option>)}
@@ -1251,12 +1397,14 @@ function SuggestionsTab({ suggestions, academicItems, showToast }) {
 
             {isUniversity && (
               <>
+                {needsBranch && (
                 <Field label="Branch *">
                   <select value={form.branch} onChange={event => updateForm({ branch: event.target.value, subject: '' })}>
                     <option value="">Select branch</option>
                     {(selectedItem.branches || []).map(branch => <option key={branch} value={branch}>{branch}</option>)}
                   </select>
                 </Field>
+                )}
 
                 <Field label="Semester *">
                   <select value={form.semester} onChange={event => updateForm({ semester: event.target.value, subject: '' })}>
